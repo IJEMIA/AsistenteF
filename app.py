@@ -104,8 +104,8 @@ def procesar_respuesta(user_input):
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
             
-            # ¡AQUÍ ESTÁ EL CAMBIO DE MODELO A MIXTRAL!
-            stream = client.chat.completions.create(model="mixtral-8x7b-32768", messages=mensajes_api, stream=True)
+            # NUEVO MODELO PRINCIPAL DE GROQ AQUÍ
+            stream = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=mensajes_api, stream=True)
             
             for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
