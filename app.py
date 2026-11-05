@@ -40,6 +40,30 @@ css_historia = """
 </style>
 """
 st.markdown(css_historia, unsafe_allow_html=True)
+
+# ----------------- CONEXIÓN Y OBTENCIÓN DINÁMICA DE MODELOS -----------------
+try:
+    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=st.secrets["groq"]["api_key"])
+    
+    # Le pedimos a Groq la lista de modelos que SÍ existen y SÍ tienes permitidos
+    try:
+        modelos_data = client.models.list().data
+        # Filtramos para no mostrar los de audio (whisper) en el chat de texto
+        lista_modelos = [m.id for m in modelos_data if "whisper" not in m.id.lower()]
+    except Exception:
+        lista_modelos = ["llama3-8b-8192", "mixtral-8x7b-32768"] # Respaldo en caso de error
+except Exception:
+    st.error("Error de configuración: Revisa los Secrets en Streamlit Cloud.")
+    st.stop()
+
+# ----------------- BARRA LATERAL PARA ELEGIR EL MODELO -----------------
+with st.sidebar:
+    st.markdown("### ⚙️ Configuración")
+    st.caption("Si un modelo da error, simplemente elige otro de esta lista actualizada en tiempo real por Groq.")
+    # El modelo por defecto será el primero de la lista que Groq devuelva
+    modelo_elegido = st.selectbox("Selecciona el modelo de IA:", lista_modelos)
+
+# ----------------- INTERFAZ PRINCIPAL -----------------
 st.markdown('<div class="sep">✦ ✦ ✦ ✦ ✦</div>', unsafe_allow_html=True)
 st.title("📜 Asistente F 📜")
 st.caption("Tu compañero de viaje por la Historia Universal • Aprende a tu ritmo")
@@ -68,12 +92,6 @@ Pautas de comportamiento:
 - Puedes proponer breves preguntas o mini-quizzes al final de tus explicaciones para afianzar el aprendizaje.
 - Si te preguntan quién te creó, responde amablemente: "Fui diseñado como Asistente F para acompañarte a explorar los grandes acontecimientos y procesos de la historia."
 """
-
-try:
-    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=st.secrets["groq"]["api_key"])
-except Exception:
-    st.error("Error de configuración: Revisa los Secrets en Streamlit Cloud.")
-    st.stop()
 
 def text_to_speech_web(text):
     try:
@@ -104,8 +122,8 @@ def procesar_respuesta(user_input):
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
             
-            # MODELO EXTRAÍDO DE TU IMAGEN: DEEPSEEK
-            stream = client.chat.completions.create(model="deepseek-r1-distill-llama-70b", messages=mensajes_api, stream=True)
+            # AQUÍ USAMOS EL MODELO ELEGIDO EN LA BARRA LATERAL
+            stream = client.chat.completions.create(model=modelo_elegido, messages=mensajes_api, stream=True)
             
             for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
