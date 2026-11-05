@@ -103,7 +103,10 @@ def procesar_respuesta(user_input):
         full_response = ""
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
-            stream = client.chat.completions.create(model="llama3-8b-8192", messages=mensajes_api, stream=True)
+            
+            # ¡AQUÍ ESTÁ EL CAMBIO DE MODELO A MIXTRAL!
+            stream = client.chat.completions.create(model="mixtral-8x7b-32768", messages=mensajes_api, stream=True)
+            
             for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
                     full_response += chunk.choices[0].delta.content
