@@ -104,8 +104,8 @@ def procesar_respuesta(user_input):
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
             
-            # MODELO SÚPER ESTABLE: gemma2-9b-it
-            stream = client.chat.completions.create(model="gemma2-9b-it", messages=mensajes_api, stream=True)
+            # MODELO EXTRAÍDO DE TU IMAGEN: DEEPSEEK
+            stream = client.chat.completions.create(model="deepseek-r1-distill-llama-70b", messages=mensajes_api, stream=True)
             
             for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
