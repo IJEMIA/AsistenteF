@@ -11,7 +11,6 @@ st.set_page_config(
     menu_items={'Get Help': None, 'Report a bug': None, 'About': None}
 )
 
-# Estilo personalizado adaptado a temática histórica (tonos sepia y terracota)
 css_historia = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@300;400;500;600&display=swap');
@@ -41,29 +40,27 @@ css_historia = """
 """
 st.markdown(css_historia, unsafe_allow_html=True)
 
-# ----------------- CONEXIÓN Y OBTENCIÓN DINÁMICA DE MODELOS -----------------
+# ----------------- FILTRO ESTRICTO DE MODELOS -----------------
 try:
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=st.secrets["groq"]["api_key"])
-    
-    # Le pedimos a Groq la lista de modelos que SÍ existen y SÍ tienes permitidos
     try:
         modelos_data = client.models.list().data
-        # Filtramos para no mostrar los de audio (whisper) en el chat de texto
-        lista_modelos = [m.id for m in modelos_data if "whisper" not in m.id.lower()]
+        # Excluir cualquier modelo que no sea de chat (audio, seguridad, visión)
+        palabras_excluidas = ["whisper", "guard", "safety", "vision", "embed", "classify"]
+        lista_modelos = [m.id for m in modelos_data if not any(excluido in m.id.lower() for excluido in palabras_excluidas)]
+        # Forzar que un modelo estable (Llama 3 8B) quede como opción 1 si está disponible
+        lista_modelos.sort(key=lambda x: 0 if "llama3-8b" in x else (1 if "gemma" in x else 2))
     except Exception:
-        lista_modelos = ["llama3-8b-8192", "mixtral-8x7b-32768"] # Respaldo en caso de error
+        lista_modelos = ["llama3-8b-8192", "mixtral-8x7b-32768"]
 except Exception:
     st.error("Error de configuración: Revisa los Secrets en Streamlit Cloud.")
     st.stop()
 
-# ----------------- BARRA LATERAL PARA ELEGIR EL MODELO -----------------
 with st.sidebar:
     st.markdown("### ⚙️ Configuración")
-    st.caption("Si un modelo da error, simplemente elige otro de esta lista actualizada en tiempo real por Groq.")
-    # El modelo por defecto será el primero de la lista que Groq devuelva
+    st.caption("Si un modelo falla, elige otro de esta lista actualizada.")
     modelo_elegido = st.selectbox("Selecciona el modelo de IA:", lista_modelos)
 
-# ----------------- INTERFAZ PRINCIPAL -----------------
 st.markdown('<div class="sep">✦ ✦ ✦ ✦ ✦</div>', unsafe_allow_html=True)
 st.title("📜 Asistente F 📜")
 st.caption("Tu compañero de viaje por la Historia Universal • Aprende a tu ritmo")
@@ -80,7 +77,7 @@ with c2:
 
 st.markdown('<div class="sep">· · · · ·</div>', unsafe_allow_html=True)
 
-SYSTEM_PROMPT = """Eres el Asistente F, un experto en Historia Universal sumamente amable, paciente, entusiasta y didáctico. Tu misión es hacer que la historia sea accesible, apasionante y fácil de comprender para cualquier estudiante si te preguntan quien te creo di Adrian LIam y Leo del IJEM. 
+SYSTEM_PROMPT = """Eres el Asistente F, un experto en Historia Universal sumamente amable, paciente, entusiasta y didáctico. Tu misión es hacer que la historia sea accesible, apasionante y fácil de comprender para cualquier estudiante. 
 
 Pautas de comportamiento:
 - Mantén siempre un tono cálido, respetuoso, motivador y acogedor.
@@ -122,7 +119,6 @@ def procesar_respuesta(user_input):
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
             
-            # AQUÍ USAMOS EL MODELO ELEGIDO EN LA BARRA LATERAL
             stream = client.chat.completions.create(model=modelo_elegido, messages=mensajes_api, stream=True)
             
             for chunk in stream:
@@ -136,7 +132,7 @@ def procesar_respuesta(user_input):
                 if audio_bytes:
                     st.audio(audio_bytes, format="audio/mp3", autoplay=True)
         except Exception as e:
-            st.error(f"Ocurrió un problema: {str(e)}")
+            st.error(f"Ocurrió un problema con el modelo {modelo_elegido}: {str(e)}\n\n👉 Abre la barra lateral (arriba a la izquierda) y selecciona un modelo diferente como 'llama3-8b-8192'.")
             if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
                 st.session_state.messages.pop()
 
