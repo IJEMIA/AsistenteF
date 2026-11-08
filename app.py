@@ -20,6 +20,12 @@ st.set_page_config(
     menu_items={'Get Help': None, 'Report a bug': None, 'About': None}
 )
 
+# ----------------- MODELOS FIJOS Y VALIDADOS DE GROQ -----------------
+# Se usa un único modelo principal de chat en español que NO requiere aceptar términos adicionales,
+# acompañado de un respaldo automático ultrarrápido en caso de límite de cuota.
+MODELO_PRINCIPAL = "llama-3.3-70b-versatile"
+MODELO_RESPALDO = "llama-3.1-8b-instant"
+
 # ----------------- ESTILOS CSS -----------------
 css_pergamino = """
 <style>
@@ -50,7 +56,7 @@ css_pergamino = """
 """
 st.markdown(css_pergamino, unsafe_allow_html=True)
 
-# ----------------- INICIALIZACIÓN DEL CLIENTE Y MODELOS -----------------
+# ----------------- INICIALIZACIÓN DEL CLIENTE GROQ -----------------
 try:
     api_key = st.secrets["groq"]["api_key"]
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
@@ -58,34 +64,12 @@ except Exception:
     st.error("⚠️ Error de configuración: Revisa que `st.secrets['groq']['api_key']` esté definido en tus Secrets.")
     st.stop()
 
-@st.cache_data(ttl=3600)
-def obtener_modelos(_client):
-    try:
-        modelos_data = _client.models.list().data
-        palabras_excluidas = ["whisper", "guard", "safety", "vision", "embed", "classify", "tts", "audio"]
-        lista = [
-            m.id for m in modelos_data 
-            if not any(excluido in m.id.lower() for excluido in palabras_excluidas)
-        ]
-        # Priorizar modelos Llama 3.3 / 3.1 para razonamiento estricto de instrucciones
-        def prioridad(nombre):
-            if "llama-3.3-70b" in nombre: return 0
-            if "llama-3.1-8b" in nombre or "llama3-8b" in nombre: return 1
-            if "gemma" in nombre: return 2
-            return 3
-        lista.sort(key=prioridad)
-        return lista if lista else ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    except Exception:
-        return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-8b-8192"]
-
-lista_modelos = obtener_modelos(client)
-
 # ----------------- FUNCIONES AUXILIARES -----------------
 def limpiar_texto_para_audio(texto):
     """Elimina símbolos de Markdown, tablas y emojis para que gTTS lea con naturalidad."""
     texto = re.sub(r'[#*`_~>|]', ' ', texto)
     texto = re.sub(r'[-]{2,}', ' ', texto)
-    texto = re.sub(r'[✅❌🗑️📜⚙️✦·👉]', '', texto)
+    texto = re.sub(r'[✅❌🗑️📜⚙️✦·👉🔊📥📄📝]', '', texto)
     texto = re.sub(r'\s+', ' ', texto).strip()
     return texto
 
@@ -397,9 +381,7 @@ if "messages" not in st.session_state or len(st.session_state.messages) == 0:
 # ----------------- BARRA LATERAL -----------------
 with st.sidebar:
     st.markdown("### ⚙️ Configuración")
-    st.caption("Si un modelo falla, elige otro de esta lista actualizada.")
-    modelo_elegido = st.selectbox("Selecciona el modelo de IA:", lista_modelos)
-    
+    st.caption(f"Motor IA activo: `{MODELO_PRINCIPAL}`")
     activar_voz = st.toggle("🔊 Lectura por voz automática", value=True)
     
     st.divider()
@@ -434,7 +416,6 @@ st.markdown('<div class="sep">✦ ✦ ✦ ✦ ✦</div>', unsafe_allow_html=True
 st.title("📜 Asistente F 📜")
 st.caption("Facilitador Crítico de Marco OKR")
 
-# Sintaxis corregida: cada elemento tiene sus propias comillas dentro de la lista
 temas = ["Administración", "Procesos", "Química", "Investigación", "OKR"]
 chips = '<div class="temas-bar">' + ''.join(f'<span class="tema-chip">{t}</span>' for t in temas) + '</div>'
 st.markdown(chips, unsafe_allow_html=True)
@@ -455,7 +436,24 @@ for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-# ----------------- PROCESAMIENTO DE RESPUESTA -----------------
+# ----------------- PROCESAMIENTO CON RESPALDO AUTOMÁTICO -----------------
+def solicitar_completion_con_respaldo(mensajes_api):
+    """Intenta usar el modelo principal; si hay saturación o fallo, usa el de respaldo automáticamente."""
+    try:
+        return client.chat.completions.create(
+            model=MODELO_PRINCIPAL,
+            messages=mensajes_api,
+            temperature=0.3,
+            stream=True
+        )
+    except Exception:
+        return client.chat.completions.create(
+            model=MODELO_RESPALDO,
+            messages=mensajes_api,
+            temperature=0.3,
+            stream=True
+        )
+
 def procesar_respuesta(user_input):
     with st.chat_message("user"):
         st.markdown(user_input)
@@ -467,12 +465,7 @@ def procesar_respuesta(user_input):
         try:
             mensajes_api = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
             
-            stream = client.chat.completions.create(
-                model=modelo_elegido, 
-                messages=mensajes_api,
-                temperature=0.3, # Temperatura baja para mantener el rigor metodológico del prompt
-                stream=True
-            )
+            stream = solicitar_completion_con_respaldo(mensajes_api)
             
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content is not None:
@@ -488,10 +481,7 @@ def procesar_respuesta(user_input):
                     st.audio(audio_bytes, format="audio/mp3", autoplay=True)
                     
         except Exception as e:
-            st.error(
-                f"Ocurrió un problema con el modelo `{modelo_elegido}`: {str(e)}\n\n"
-                "👉 Abre la barra lateral (arriba a la izquierda) y selecciona un modelo diferente."
-            )
+            st.error(f"Error de conexión con la API de Groq: {str(e)}")
             if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
                 st.session_state.messages.pop()
 
